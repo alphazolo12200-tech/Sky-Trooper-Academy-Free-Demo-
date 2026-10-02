@@ -1,0 +1,155 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sky Trooper Academy - Free Demo</title>
+<style>
+:root{--bg:#0d1823;--card:#162b3d;--fg:#eef4f8;--ac:#ffb703;--ok:#3ddc84;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{height:100%;margin:0}
+body{background:#0d1823;color:var(--fg);font-family:system-ui,Segoe UI,Arial,sans-serif;display:flex;flex-direction:column;align-items:center;overflow-x:hidden}
+#wrap{position:relative;width:100%;max-width:800px}
+canvas{width:100%;height:auto;display:block;background:#000;border-radius:0 0 12px 12px;touch-action:none}
+.ov{position:absolute;inset:0;background:rgba(8,16,24,.93);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:12px;text-align:center;overflow:auto}
+.ov h1{margin:0;font-size:clamp(22px,5vw,34px);color:var(--ac)}
+.ov p{margin:2px 0;font-size:14px;max-width:560px;line-height:1.4}
+.row{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+button{font:inherit;color:var(--fg);background:var(--card);border:2px solid #2d4a63;border-radius:10px;padding:8px 12px;cursor:pointer}
+button.sel{border-color:var(--ac);background:#2a3f52}
+button.go{background:var(--ac);color:#111;font-weight:700;border-color:var(--ac);padding:10px 26px;font-size:17px}
+#ctl{display:flex;align-items:center;justify-content:space-between;width:100%;max-width:800px;padding:10px 14px;box-sizing:border-box;user-select:none;-webkit-user-select:none}
+.pad{display:grid;grid-template-columns:repeat(3,52px);grid-template-rows:repeat(2,52px);gap:5px}
+.pad button{padding:0;font-size:22px;touch-action:none}
+#act{min-width:150px;height:86px;font-size:18px;font-weight:700;background:var(--ac);color:#111;border-color:var(--ac);touch-action:none}
+.ft{font-size:11px;opacity:.7;padding:4px 14px 12px;text-align:center;max-width:800px}
+.lesson{background:var(--card);border-radius:10px;padding:8px 12px;font-size:13px;text-align:left;max-width:560px}
+</style></head><body>
+<div id="wrap"><canvas id="c" width="800" height="500"></canvas>
+<div class="ov" id="menu">
+<h1>Sky Trooper Academy <small style="font-size:.5em;color:#fff">FREE DEMO</small></h1>
+<p>Train like a military paratrooper! Jump, deploy your own parachute, steer to the target and learn how to land safely.</p>
+<p><b>Mission</b></p><div class="row" id="modes"></div>
+<p><b>Landing zone</b></p><div class="row" id="terrs"></div>
+<div class="lesson" id="brief"></div>
+<button class="go" id="start">START TRAINING</button>
+<p style="font-size:12px;opacity:.7">Arrows / WASD to steer &bull; Space = action button</p>
+</div>
+<div class="ov" id="res" style="display:none"></div></div>
+<div id="ctl">
+<div class="pad"><span></span><button data-k="u">&#9650;</button><span></span><button data-k="l">&#9664;</button><button data-k="d">&#9660;</button><button data-k="r">&#9654;</button></div>
+<button id="act">JUMP!</button></div>
+<div class="ft">Fun training simulator for learning the basics. Real parachute training must always be done with a certified instructor.</div>
+<script>
+const $=id=>document.getElementById(id),C=$('c'),x=C.getContext('2d'),W=800,H=500;
+const M={cadet:{n:'Cadet Jump (1200 ft)',d:'Jump from 1200 ft, deploy in the green zone, steer and land.',start:1200,fall:90,win:[1000,600],low:350,can:40,steerF:120},
+ expert:{n:'Free-Fall Expert (10,000 ft)',d:'Free-fall through the rings, deploy at 3500-2500 ft, then land.',start:10000,fall:420,win:[3500,2500],low:1800,can:110,steerF:230}};
+const T={desert:{n:'Desert',c1:'#dfb468',c2:'#c99a4e',wind:1.7,act:'ROLL (PLF)',tip:'Sand is soft but gusts push you around. Watch the wind arrow and steer into it.'},
+ water:{n:'Open Water',c1:'#1f78b4',c2:'#4aa3dc',wind:.8,act:'RELEASE HARNESS',tip:'Over water, release your harness just before touchdown so the canopy cannot drag you under. Flotation vest on!'},
+ forest:{n:'Forest',c1:'#2d6a35',c2:'#1f5428',wind:.6,act:'TREE POSE',tip:'If you must land in trees: feet and knees together, chin on chest, elbows in, hands covering your face.'},
+ snow:{n:'Snow Mountain',c1:'#e8f1f7',c2:'#c3d8e6',wind:1.3,act:'ROLL (PLF)',tip:'Snow hides bumps and rocks. Keep your eyes on the horizon, not the ground, and keep knees soft.'},
+ field:{n:'Farm Field',c1:'#7bb04a',c2:'#6a9c3c',wind:1,act:'ROLL (PLF)',tip:'Look for fences and ditches. Land into the wind whenever you can.'}};
+const LOCK={expert:1,water:1,forest:1,snow:1,field:1},LOCKMSG='<b>Locked in the free demo.</b> The full version has Free-Fall Expert mode, 5 landing zones and more. Get the full game prompt on PromptBase.';let jumps=0;
+let mode='cadet',terr='desert',G=null,K={l:0,r:0,u:0,d:0},best={};
+try{best=JSON.parse(localStorage.getItem('sta_best')||'{}')}catch(e){}
+function chips(el,obj,key,get){el.innerHTML='';for(const k in obj){const b=document.createElement('button');b.textContent=(LOCK[k]?'🔒 ':'')+obj[k].n;b.className=get()===k?'sel':'';b.onclick=()=>{if(LOCK[k]){fill();$('brief').innerHTML=LOCKMSG;return}key(k);fill()};el.appendChild(b)}}
+function fill(){chips($('modes'),M,k=>mode=k,()=>mode);chips($('terrs'),T,k=>terr=k,()=>terr);
+ $('brief').innerHTML='<b>'+M[mode].n+':</b> '+M[mode].d+'<br><b>Tip:</b> '+T[terr].tip+(best[mode+terr]?'<br>Best score: '+best[mode+terr]:'')}
+fill();
+addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(k=='arrowleft'||k=='a')K.l=1;if(k=='arrowright'||k=='d')K.r=1;if(k=='arrowup'||k=='w')K.u=1;if(k=='arrowdown'||k=='s')K.d=1;if(k==' '||k=='enter'){e.preventDefault();act()}});
+addEventListener('keyup',e=>{const k=e.key.toLowerCase();if(k=='arrowleft'||k=='a')K.l=0;if(k=='arrowright'||k=='d')K.r=0;if(k=='arrowup'||k=='w')K.u=0;if(k=='arrowdown'||k=='s')K.d=0});
+document.querySelectorAll('[data-k]').forEach(b=>{const k=b.dataset.k;b.addEventListener('pointerdown',e=>{e.preventDefault();K[k]=1});['pointerup','pointerleave','pointercancel'].forEach(v=>b.addEventListener(v,()=>K[k]=0))});
+$('act').addEventListener('pointerdown',e=>{e.preventDefault();act()});
+$('start').onclick=begin;
+function begin(){if(++jumps>3){G=null;$('res').style.display='none';$('menu').style.display='flex';fill();$('brief').innerHTML='<b>Demo limit reached (3 jumps).</b> Get the full game prompt on PromptBase to build the complete version.';return}const m=M[mode],t=T[terr];
+ G={ph:'door',time:0,alt:m.start,px:W/2,py:H/2,vx:0,vy:0,tx:140+Math.random()*440,ty:150+Math.random()*250,light:2.2+Math.random()*1.5,score:0,notes:[],rings:[],hits:0,wt:Math.random()*6,msg:'',actT:null,dz:null,rate:m.can,decor:[],over:0};
+ for(let i=0;i<70;i++){const o={x:Math.random()*W,y:Math.random()*H,r:6+Math.random()*(terr=='forest'?12:22)};if(Math.hypot(o.x-G.tx,o.y-G.ty)>70)G.decor.push(o)}
+ if(mode=='expert')for(let a=9200;a>=4100;a-=700)G.rings.push({a,x:100+Math.random()*600,y:80+Math.random()*340,done:0});
+ $('menu').style.display='none';$('res').style.display='none';$('act').textContent='JUMP!';
+ G.running=1;if(!looping){looping=1;last=performance.now();requestAnimationFrame(loop)}}
+let last=0,looping=0;
+function say(s){G.msg=s}
+function act(){if(!G||G.over)return;
+ if(G.ph=='door'){if(G.time<G.light){G.score-=20;G.notes.push('Never exit on the red light. Green means the aircraft is over the drop zone.')}
+  G.ph='fall';G.px=W/2;G.py=H/2;$('act').textContent='DEPLOY CHUTE';}
+ else if(G.ph=='fall'){const m=M[mode],a=G.alt;
+  if(a>m.win[0]){G.score+=20;G.notes.push('You opened too high and the wind carried you far. Wait for the green zone on the altitude bar.')}
+  else if(a>=m.win[1]){G.score+=50;G.hits++}
+  else{G.score+=20;G.notes.push('Late opening leaves little time to steer. Check altitude early and deploy inside the green zone.')}
+  G.ph='canopy';$('act').textContent=T[terr].act;}
+ else if(G.ph=='canopy'&&G.actT==null&&G.alt/G.rate<2.6){G.actT=G.alt/G.rate}}
+function finish(ok,why){G.over=1;const m=M[mode],t=T[terr];let q='none';
+ if(ok){const a=G.actT;q=a==null?'none':a<.15?'late':a<=1.2?'good':'early';
+  const d=Math.hypot(G.px-G.tx,G.py-G.ty);G.score+=d<40?50:d<100?25:0;G.dist=d;
+  if(q=='good')G.score+=100;else if(q=='early'){G.score+=60;G.notes.push('You got into landing position too soon. Wait until the ground rushes up, then set your position.')}
+  else{G.notes.push('Hard landing! Before touchdown: eyes on the horizon, feet and knees together, knees slightly bent, chin on chest, elbows tucked.');G.notes.push('Roll through the five points of contact: balls of the feet, calf, thigh, buttock, then the back and shoulder muscle. Never reach out with your hands.')}
+  if(terr=='water'&&q!='good')G.notes.push('In water, release the harness before you touch down, then swim clear upwind of the canopy.')}
+ else G.notes.push(why);
+ G.notes.push(t.tip);
+ const max=m.win&&(mode=='expert'?320:200),pct=ok?G.score/max:0,stars=!ok?0:pct>=.8?3:pct>=.5?2:1;
+ const k=mode+terr;if(G.score>(best[k]||0)){best[k]=Math.max(0,G.score);try{localStorage.setItem('sta_best',JSON.stringify(best))}catch(e){}}
+ const head=!ok?'Mission failed':q=='good'?'Safe landing!':q=='early'?'Rough but safe landing':'Hard landing';
+ $('res').innerHTML='<h1>'+head+'</h1><div style="font-size:30px">'+'&#9733;'.repeat(stars)+'<span style="opacity:.3">'+'&#9733;'.repeat(3-stars)+'</span></div><p>Score: <b>'+Math.max(0,G.score)+'</b>'+(mode=='expert'?' &bull; Rings: '+G.rg+'/'+G.rings.length:'')+'</p><div class="lesson"><b>What you learned</b><ul style="margin:4px 0;padding-left:18px">'+G.notes.map(n=>'<li>'+n+'</li>').join('')+'</ul></div><div class="row"><button class="go" onclick="begin()">TRY AGAIN</button><button onclick="G=null;fill();$(\'res\').style.display=\'none\';$(\'menu\').style.display=\'flex\'">MENU</button></div>';
+ $('res').style.display='flex';}
+G={rg:0};
+function loop(n){if(!G||!G.running){looping=0;return}const dt=Math.min(.05,(n-last)/1000);last=n;if(!G.over)upd(dt);draw();requestAnimationFrame(loop)}
+function upd(dt){const m=M[mode],t=T[terr];G.time+=dt;G.wt+=dt*.6;G.rg=G.rg||0;
+ const wx=t.wind*30*Math.sin(G.wt)+8,wy=t.wind*14*Math.cos(G.wt*.7);G.wx=wx;G.wy=wy;
+ const ix=K.r-K.l,iy=K.d-K.u;
+ if(G.ph=='door'){say(G.time<G.light?'RED LIGHT - stand in the door, wait...':'GREEN LIGHT - GO! Press JUMP');return}
+ const sp=G.ph=='fall'?m.steerF:90,wf=G.ph=='fall'?.4:1;
+ G.vx+=((ix*sp+wx*wf)-G.vx)*Math.min(1,dt*3);G.vy+=((iy*sp+wy*wf)-G.vy)*Math.min(1,dt*3);
+ G.px=Math.max(20,Math.min(W-20,G.px+G.vx*dt));G.py=Math.max(20,Math.min(H-20,G.py+G.vy*dt));
+ if(G.ph=='fall'){const old=G.alt;G.alt-=m.fall*dt;
+  for(const r of G.rings)if(!r.done&&G.alt<=r.a){r.done=1;if(Math.hypot(G.px-r.x,G.py-r.y)<62){r.hit=1;G.rg++;G.score+=15}}
+  if(G.alt>m.win[0])say('Free-falling... deploy window opens at '+m.win[0]+' ft'+(mode=='expert'?' - fly through the rings!':''));
+  else if(G.alt>=m.win[1])say('DEPLOY NOW! Green zone');else say('LATE! Deploy immediately!');
+  if(G.alt<m.low){finish(0,'You ran out of altitude. Always deploy above your hard deck - check the altitude bar often.')}}
+ else{G.alt-=G.rate*dt;const ttg=G.alt/G.rate;
+  if(ttg>2.6)say('Under canopy: steer to the target circle (into the wind)');
+  else if(G.actT!=null)say('Position set - brace for landing!');
+  else if(ttg>1.2)say('GET READY...');else say('NOW! Press '+t.act);
+  if(G.alt<=0){G.alt=0;finish(1)}}}
+function shadow(a,b,k){x.fillStyle='rgba(0,0,0,.22)';x.beginPath();x.ellipse(a,b,32*k,13*k,0,0,7);x.fill()}
+function limb(a,b,c,d,w,col){x.strokeStyle=col;x.lineWidth=w;x.lineCap='round';x.beginPath();x.moveTo(a,b);x.lineTo(c,d);x.stroke()}
+function ffall(cx,cy){x.save();x.translate(cx,cy);x.rotate(Math.max(-.3,Math.min(.3,G.vx/500)));const su='#4d5f2b',bk='#1b1b1b';
+ limb(-6,-4,-32,-20,9,su);limb(6,-4,32,-20,9,su);limb(-4,12,-18,40,10,su);limb(4,12,18,40,10,su);
+ x.fillStyle=bk;[[-33,-21],[33,-21],[-19,42],[19,42]].forEach(q=>{x.beginPath();x.arc(q[0],q[1],5,0,7);x.fill()});
+ x.fillStyle='#5a6e30';x.beginPath();x.roundRect(-10,-12,20,28,7);x.fill();
+ x.fillStyle='#2f3a1c';x.fillRect(-8,-2,16,4);
+ x.fillStyle='#2b2f2a';x.beginPath();x.arc(0,-19,8.5,0,7);x.fill();x.fillStyle='#ffb703';x.fillRect(-8,-23,16,2);x.restore()}
+function hang(cx,cy){x.save();x.translate(cx,cy);x.rotate(Math.max(-.25,Math.min(.25,G.vx/420)));const su='#4d5f2b',pose=G.actT!=null;
+ const s=Math.sin(G.time*3)*(pose?0:2.5);
+ x.fillStyle='#e8e8e8';x.beginPath();x.ellipse(0,-58,40,17,0,Math.PI,0);x.fill();
+ for(let i=0;i<6;i++){x.fillStyle=i%2?'#fff':'#ff7b00';x.beginPath();x.moveTo(-40+i*13.3,-58);x.quadraticCurveTo(-40+i*13.3+6.6,-75,-40+(i+1)*13.3,-58);x.fill()}
+ x.strokeStyle='#fff';x.lineWidth=1;x.beginPath();x.ellipse(0,-58,40,17,0,Math.PI,0);x.stroke();
+ [[-38,-6],[-12,-4],[12,-4],[38,-6]].forEach((q,i)=>{x.strokeStyle='rgba(30,30,30,.65)';x.lineWidth=1;x.beginPath();x.moveTo(q[0],-58);x.lineTo(i<2?-4:4,-2);x.stroke()});
+ limb(-4,-3,-9,-20,5,su);limb(4,-3,9,-20,5,su);
+ x.fillStyle='#5a6e30';x.beginPath();x.roundRect(-6,-4,12,22,4);x.fill();
+ x.fillStyle='#2b2f2a';x.beginPath();x.arc(0,-9,6.5,0,7);x.fill();
+ if(pose){limb(-2,17,-2,29,6,su);limb(2,17,3,29,6,su);limb(-2,29,-3,40,6,su);limb(3,29,4,40,6,su);x.fillStyle='#1b1b1b';x.fillRect(-6,39,11,5)}
+ else{limb(-3,17,-5+s,36,6,su);limb(3,17,5-s,36,6,su);x.fillStyle='#1b1b1b';x.beginPath();x.arc(-5+s,38,4,0,7);x.arc(5-s,38,4,0,7);x.fill()}
+ x.restore()}
+function draw(){const m=M[mode],t=T[terr];x.fillStyle=t.c1;x.fillRect(0,0,W,H);
+ x.fillStyle=t.c2;x.strokeStyle=t.c2;x.lineWidth=3;
+ for(const o of G.decor||[]){if(terr=='water'){x.beginPath();x.arc(o.x,o.y,o.r,Math.PI*1.1,Math.PI*1.9);x.stroke()}else{x.beginPath();x.arc(o.x,o.y,o.r,0,7);x.fill()}}
+ const tcol=terr=='water'?['#ff7b00','#fff']:['#d62828','#fff'];
+ [44,30,16].forEach((r,i)=>{x.fillStyle=i%2?tcol[1]:tcol[0];x.beginPath();x.arc(G.tx,G.ty,r,0,7);x.fill()});
+ if(G.ph=='fall'&&G.alt!=null){for(const r of G.rings||[]){if(r.done)continue;const d=G.alt-r.a,rad=20+90*Math.max(0,1-d/2500);x.strokeStyle='#ffb703';x.lineWidth=5;x.beginPath();x.arc(r.x,r.y,rad,0,7);x.stroke()}}
+ const hz=G.ph=='fall'?Math.min(.65,.15+G.alt/m.start*.5):G.ph=='canopy'?Math.min(.3,G.alt/(m.start)*.5):0;
+ x.fillStyle='rgba(255,255,255,'+hz+')';x.fillRect(0,0,W,H);
+ if(G.ph=='door'){x.fillStyle='rgba(8,16,24,.55)';x.fillRect(0,0,W,H);x.fillStyle='#8a97a3';x.beginPath();x.roundRect(250,215,300,60,28);x.fill();x.fillRect(360,110,70,270);x.fillRect(230,230,40,30);
+  x.fillStyle=G.time<G.light?'#e63946':'#3ddc84';x.beginPath();x.arc(515,245,10,0,7);x.fill()}
+ else if(G.ph=='fall'){shadow(G.px+14,G.py+16,.8);ffall(G.px,G.py)}
+ else{shadow(G.px+10,G.py+14,1);hang(G.px,G.py-18)}
+ // HUD
+ x.fillStyle='rgba(8,16,24,.7)';x.fillRect(0,0,W,34);x.fillStyle='#fff';x.font='bold 17px system-ui';x.textAlign='left';
+ x.fillText('ALT '+Math.max(0,Math.round(G.alt))+' ft',12,23);x.fillText(m.n.split(' (')[0]+' - '+t.n,170,23);
+ x.textAlign='right';x.fillText('Score '+G.score,W-12,23);x.textAlign='center';x.font='bold 18px system-ui';
+ x.fillStyle='rgba(8,16,24,.7)';x.fillRect(120,44,560,30);x.fillStyle=/NOW|DEPLOY NOW|GREEN/.test(G.msg)?'#3ddc84':/LATE|RED/.test(G.msg)?'#ff6b6b':'#fff';x.fillText(G.msg||'',W/2,65);
+ // altitude bar
+ const bx=W-34,by=90,bh=340;const Y=a=>by+bh-bh*a/m.start;
+ x.fillStyle='#223';x.fillRect(bx,by,16,bh);x.fillStyle='#3ddc84';x.fillRect(bx,Y(m.win[0]),16,Y(m.win[1])-Y(m.win[0]));
+ x.fillStyle='#ffb703';x.fillRect(bx,Y(m.win[1]),16,Y(m.low)-Y(m.win[1]));x.fillStyle='#e63946';x.fillRect(bx,Y(m.low),16,by+bh-Y(m.low));
+ x.fillStyle='#fff';x.fillRect(bx-6,Math.max(by,Y(G.alt))-2,28,4);
+ x.font='bold 13px system-ui';x.textAlign='left';x.fillStyle='#ffb703';x.fillText('FREE DEMO',12,H-10);
+ // wind
+ if(G.ph!='door'){x.save();x.translate(60,H-50);x.fillStyle='rgba(8,16,24,.7)';x.beginPath();x.arc(0,0,34,0,7);x.fill();x.rotate(Math.atan2(G.wy||0,G.wx||1));x.strokeStyle='#fff';x.lineWidth=4;x.beginPath();x.moveTo(-20,0);x.lineTo(20,0);x.lineTo(12,-7);x.moveTo(20,0);x.lineTo(12,7);x.stroke();x.restore();x.fillStyle='#fff';x.font='11px system-ui';x.fillText('WIND',60,H-8)}
+}
+</script></body></html>
